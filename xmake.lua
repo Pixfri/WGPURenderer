@@ -1,6 +1,6 @@
 set_xmakever("2.9.3")
 
-ProjectName = "ProjectName"
+ProjectName = "WGPURenderer"
 
 set_project(ProjectName)
 
@@ -18,7 +18,7 @@ if is_mode("release") then
   set_optimize("fastest")
   set_symbols("hidden")
 else
-  add_defines("PN_DEBUG")
+  add_defines("WR_DEBUG")
   set_symbols("debug")
 end
 
