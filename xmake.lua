@@ -37,7 +37,7 @@ end
 
 add_cxflags("-Wno-missing-field-initializers -Werror=vla", {tools = {"clang", "gcc"}})
 
-add_requires("wgpu-native", {configs = {shared = true}})
+add_requires("wgpu-native", "glfw", "glfw3webgpu")
 
 target(ProjectName)
   set_kind("binary")
@@ -50,6 +50,6 @@ target(ProjectName)
   
   add_rpathdirs("$ORIGIN")
 
-  add_packages("wgpu-native")
+  add_packages("wgpu-native", "glfw", "glfw3webgpu")
 
 includes("xmake/**.lua")
