@@ -12,6 +12,9 @@
 namespace WGPURenderer {
     WGPUAdapter RequestAdapterSync(WGPUInstance instance, const WGPURequestAdapterOptions* options);
     void InspectAdapter(WGPUAdapter adapter);
+    
+    WGPUDevice RequestDeviceSync(WGPUAdapter adapter, const WGPUDeviceDescriptor* descriptor);
+    void InspectDevice(WGPUDevice device);
 }
 
 #endif // WR_WGPUDEVICEUTILS_HPP
