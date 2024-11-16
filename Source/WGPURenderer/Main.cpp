@@ -5,6 +5,7 @@
 #include <WGPURenderer/WGPUDeviceUtils.hpp>
 
 #include <webgpu/webgpu.h>
+#include <webgpu/wgpu.h>
 
 #include <iostream>
 
@@ -12,7 +13,7 @@ int main() {
     WGPUInstanceDescriptor desc;
     desc.nextInChain = nullptr;
 
-    WGPUInstance instance = wgpuCreateInstance(&desc);
+    const WGPUInstance instance = wgpuCreateInstance(&desc);
 
     if (!instance) {
         std::cerr << "Couldn't initialize WebGPU!\n";
@@ -65,7 +66,7 @@ int main() {
         std::cout << '\n';
     };
     
-    WGPUDevice device = WGPURenderer::RequestDeviceSync(adapter, &deviceDesc);
+    const WGPUDevice device = WGPURenderer::RequestDeviceSync(adapter, &deviceDesc);
 
     std::cout << "Got WebGPU device: 0x" << device << '\n';
 
@@ -81,8 +82,50 @@ int main() {
 
     WGPURenderer::InspectDevice(device);
 
+    const WGPUQueue queue = wgpuDeviceGetQueue(device);
+
+    auto onQueueWorkDone = [](const WGPUQueueWorkDoneStatus status, void* /* pUserData */) {
+        std::cout << "Queued work finished with status: " << status << '\n';
+    };
+    wgpuQueueOnSubmittedWorkDone(queue, onQueueWorkDone, nullptr /* pUserData */);
+
+    WGPUCommandEncoderDescriptor encoderDesc;
+    encoderDesc.nextInChain = nullptr;
+#ifdef WR_DEBUG
+    encoderDesc.label = "Main command encoder";
+#else
+    encoderDesc.label = nullptr;
+#endif
+    const WGPUCommandEncoder encoder = wgpuDeviceCreateCommandEncoder(device, &encoderDesc);
+
+    wgpuCommandEncoderInsertDebugMarker(encoder, "Do one thing");
+    wgpuCommandEncoderInsertDebugMarker(encoder, "Do another thing");
+
+    WGPUCommandBufferDescriptor cmdBufferDesc{};
+    cmdBufferDesc.nextInChain = nullptr;
+    encoderDesc.nextInChain = nullptr;
+#ifdef WR_DEBUG
+    encoderDesc.label = "Main command buffer";
+#else
+    encoderDesc.label = nullptr;
+#endif
+    WGPUCommandBuffer cmdBuffer = wgpuCommandEncoderFinish(encoder, &cmdBufferDesc);
+    wgpuCommandEncoderRelease(encoder);
+
+    // Finally submit the command queue
+    std::cout << "Submitting commands...\n";
+    wgpuQueueSubmit(queue, 1, &cmdBuffer);
+    wgpuCommandBufferRelease(cmdBuffer);
+    std::cout << "Commands submitted.\n";
+
+    for (int i = 0; i < 5; ++i) {
+        wgpuDevicePoll(device, false, nullptr);
+    }
+    
     // Release the adapter after we got the device, we don't need it anymore.
     wgpuAdapterRelease(adapter);
+
+    wgpuQueueRelease(queue);
     
     wgpuDeviceRelease(device);
 
