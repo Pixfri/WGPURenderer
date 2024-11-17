@@ -28,15 +28,19 @@ namespace WGPURenderer {
     private:
         GLFWwindow* m_Window = nullptr;
         wgpu::Surface m_Surface = nullptr;
+        wgpu::TextureFormat m_SurfaceFormat = wgpu::TextureFormat::Undefined;
         wgpu::Device m_Device = nullptr;
         wgpu::Queue m_Queue = nullptr;
-        std::unique_ptr<wgpu::ErrorCallback> m_UncapturedErrorCallbackHandle;
+        std::unique_ptr<wgpu::ErrorCallback> m_UncapturedErrorCallbackHandle = nullptr;
+        wgpu::RenderPipeline m_Pipeline = nullptr;
         
         bool Initialize();
 
         void MainLoop();
 
         void Terminate();
+
+        bool InitializePipeline();
 
         wgpu::TextureView GetNextSurfaceTextureView();
     };
