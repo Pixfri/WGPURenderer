@@ -32,7 +32,7 @@ fn fs_main() -> @location(0) vec4f {
 }
 )";
     }
-    
+
     bool Application::Run() {
         if (!Initialize()) {
             return false;
@@ -168,8 +168,11 @@ fn fs_main() -> @location(0) vec4f {
         adapter.release();
 
         if (!InitializePipeline()) {
+            std::cerr << "Failed to create initialize pipeline!\n";
             return false;
         }
+
+        PlayingWithBuffers();
 
         return true;
     }
@@ -250,6 +253,8 @@ fn fs_main() -> @location(0) vec4f {
     }
 
     void Application::Terminate() {
+        m_Buffer2.release();
+        m_Buffer1.release();
         m_Pipeline.release();
         m_Surface.unconfigure();
         m_Queue.release();
@@ -271,14 +276,19 @@ fn fs_main() -> @location(0) vec4f {
 
         // It is actually used, even though resharper thinks it's not, because it's not directly referenced by the
         // wgpu::ShaderModuleDescriptor above.
-        
+
         // ReSharper disable once CppAssignedValueIsNeverUsed
         shaderCodeDesc.code = g_ShaderCode;
 
         shaderDesc.nextInChain = &shaderCodeDesc.chain;
 
         wgpu::ShaderModule shaderModule = m_Device.createShaderModule(shaderDesc);
-        
+
+        if (!shaderModule) {
+            std::cerr << "Failed to create shader module!\n";
+            return false;
+        }
+
         wgpu::RenderPipelineDescriptor pipelineDesc{};
 
         // We don't use any vertex buffer.
@@ -292,7 +302,7 @@ fn fs_main() -> @location(0) vec4f {
 
         // Each sequence of 3 vertices is a triangle.
         pipelineDesc.primitive.topology = wgpu::PrimitiveTopology::TriangleList;
-        
+
         // We'll see later how to specify the order in which vertices should be
         // connected. When not specified, vertices are considered sequentially.
         pipelineDesc.primitive.stripIndexFormat = wgpu::IndexFormat::Undefined;
@@ -346,10 +356,14 @@ fn fs_main() -> @location(0) vec4f {
         pipelineDesc.multisample.alphaToCoverageEnabled = false;
 
         pipelineDesc.layout = nullptr;
-        
-        
+
         m_Pipeline = m_Device.createRenderPipeline(pipelineDesc);
-        
+
+        if (!m_Pipeline) {
+            std::cerr << "Failed to create render pipeline!\n";
+            return false;
+        }
+
         return true;
     }
 
@@ -380,4 +394,75 @@ fn fs_main() -> @location(0) vec4f {
 
         return targetView;
     }
+
+    void Application::PlayingWithBuffers() {
+        wgpu::BufferDescriptor bufferDesc{};
+        bufferDesc.label = "Some GPU-side data buffer";
+        bufferDesc.usage = wgpu::BufferUsage::CopyDst | wgpu::BufferUsage::CopySrc;
+        bufferDesc.size = 16;
+        bufferDesc.mappedAtCreation = false;
+        m_Buffer1 = m_Device.createBuffer(bufferDesc);
+
+        bufferDesc.label = "Output buffer";
+        bufferDesc.usage = wgpu::BufferUsage::CopyDst | wgpu::BufferUsage::MapRead;
+        m_Buffer2 = m_Device.createBuffer(bufferDesc);
+
+        // Create some CPU-side data buffer (of size 16 bytes)
+        std::vector<uint8_t> numbers(16);
+        for (uint8_t i = 0; i < 16; ++i) {
+            numbers[i] = i;
+        }
+        // numbers now contains [ 0, 1, 2, ... ]
+
+        // Copy this from `numbers` (RAM) to `buffer1` (VRAM)
+        m_Queue.writeBuffer(m_Buffer1, 0, numbers.data(), numbers.size());
+
+        // Create an encoder to register our commands.
+        wgpu::CommandEncoder encoder = m_Device.createCommandEncoder(wgpu::Default);
+
+        encoder.copyBufferToBuffer(m_Buffer1, 0, m_Buffer2, 0, 16);
+
+        wgpu::CommandBuffer cmdBuffer = encoder.finish(wgpu::Default);
+        encoder.release();
+        m_Queue.submit(1, &cmdBuffer);
+        cmdBuffer.release();
+
+        struct Context {
+            bool Ready;
+            wgpu::Buffer Buffer;
+        };
+
+        auto onBuffer2Mapped = [](WGPUBufferMapAsyncStatus status, void* pUserData) {
+            Context* pContext = static_cast<Context*>(pUserData);
+
+            // We set ready to true
+            pContext->Ready = true;
+
+            std::cout << "Buffer 2 mapped with status " << status << '\n';
+            if (status != wgpu::BufferMapAsyncStatus::Success) {
+                return;
+            }
+
+            // Get a pointer to wherever the driver mapped the GPU memory to the RAM
+            const auto bufferData = static_cast<const uint8_t*>(pContext->Buffer.getConstMappedRange(0, 16));
+
+            std::cout << "bufferData = [";
+            for (int i = 0; i < 16; ++i) {
+                if (i > 0) std::cout << ", ";
+                std::cout << static_cast<int>(bufferData[i]);
+            }
+            std::cout << "]\n";
+
+            pContext->Buffer.unmap();
+        };
+
+        Context context = {false, m_Buffer2};
+        
+        wgpuBufferMapAsync(m_Buffer2, wgpu::MapMode::Read, 0, 16, onBuffer2Mapped, &context);
+
+        while (!context.Ready) {
+            m_Device.poll(false);
+        }
+    }
+
 }
