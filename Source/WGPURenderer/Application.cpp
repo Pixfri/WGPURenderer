@@ -3,28 +3,16 @@
 // For conditions of distribution and use, see copyright notice in LICENSE.
 
 #include <WGPURenderer/Application.hpp>
+#include <WGPURenderer/ShaderLoader.hpp>
 
 #include <webgpu/webgpu.hpp>
 
 #include <glfw3webgpu.h>
 
+#include <array>
 #include <iostream>
 
 namespace WGPURenderer {
-    namespace {
-        auto g_ShaderCode = R"(
-@vertex
-fn vs_main(@location(0) in_vertex_position: vec2f) -> @builtin(position) vec4f {
-	return vec4f(in_vertex_position, 0.0, 1.0);
-}
-
-@fragment
-fn fs_main() -> @location(0) vec4f {
-    return vec4f(0.0, 0.4, 1.0, 1.0);
-}
-)";
-    }
-
     bool Application::Run() {
         if (!Initialize()) {
             return false;
@@ -205,7 +193,7 @@ fn fs_main() -> @location(0) vec4f {
         renderPassColorAttachment.resolveTarget = nullptr;
         renderPassColorAttachment.loadOp = wgpu::LoadOp::Clear;
         renderPassColorAttachment.storeOp = wgpu::StoreOp::Store;
-        renderPassColorAttachment.clearValue = wgpu::Color{0.9, 0.1, 0.2, 1.0};
+        renderPassColorAttachment.clearValue = wgpu::Color{0.01, 0.01, 0.01, 1.0};
 
         renderPassDesc.colorAttachmentCount = 1;
         renderPassDesc.colorAttachments = &renderPassColorAttachment;
@@ -268,17 +256,20 @@ fn fs_main() -> @location(0) vec4f {
 
         wgpu::RequiredLimits requiredLimits = wgpu::Default;
 
-        // We use at most 1 vertex attribute for now
-        requiredLimits.limits.maxVertexAttributes = 1;
+        // We use at most 2 vertex attribute for now
+        requiredLimits.limits.maxVertexAttributes = 2;
         
         // We should also tell that we use 1 vertex buffer
         requiredLimits.limits.maxVertexBuffers = 1;
         
-        // Maximum size of a buffer is 6 vertices of 2 float each
-        requiredLimits.limits.maxBufferSize = 6ull * 2ull * sizeof(float);
+        // Maximum size of a buffer is 6 vertices of 5 float each
+        requiredLimits.limits.maxBufferSize = 6ull * 5ull * sizeof(float);
         
         // Maximum stride between 2 consecutive vertices in the vertex buffer
-        requiredLimits.limits.maxVertexBufferArrayStride = 2 * sizeof(float);
+        requiredLimits.limits.maxVertexBufferArrayStride = 5 * sizeof(float);
+
+        // There is a maximum of 3 float forwarded from vertex to fragment shader
+        requiredLimits.limits.maxInterStageShaderComponents = 3;
 
         // Forward the value from supported limits to avoid issues.
         requiredLimits.limits.minUniformBufferOffsetAlignment = supportedLimits.limits.minUniformBufferOffsetAlignment;
@@ -297,11 +288,14 @@ fn fs_main() -> @location(0) vec4f {
         shaderCodeDesc.chain.sType = wgpu::SType::ShaderModuleWGSLDescriptor;
         shaderCodeDesc.chain.next = nullptr;
 
+        // Read the shader code, the "Resources/Shaders" at the beginning of the path in inferred by the function
+        std::string shaderCode = ReadShaderFileContent("main.wgsl");
+        
         // It is actually used, even though resharper thinks it's not, because it's not directly referenced by the
         // wgpu::ShaderModuleDescriptor above.
 
         // ReSharper disable once CppAssignedValueIsNeverUsed
-        shaderCodeDesc.code = g_ShaderCode;
+        shaderCodeDesc.code = shaderCode.c_str();
 
         shaderDesc.nextInChain = &shaderCodeDesc.chain;
 
@@ -316,15 +310,21 @@ fn fs_main() -> @location(0) vec4f {
 
         wgpu::VertexBufferLayout vertexBufferLayout{};
 
-        wgpu::VertexAttribute positionAttrib{};
-        positionAttrib.shaderLocation = 0;
-        positionAttrib.format = wgpu::VertexFormat::Float32x2;
-        positionAttrib.offset = 0;
+        std::array<wgpu::VertexAttribute, 2> vertexAttributes{};
+        // Position attribute
+        vertexAttributes[0].shaderLocation = 0;
+        vertexAttributes[0].format = wgpu::VertexFormat::Float32x2;
+        vertexAttributes[0].offset = 0;
 
-        vertexBufferLayout.attributeCount = 1;
-        vertexBufferLayout.attributes = &positionAttrib;
+        // Color attribute
+        vertexAttributes[1].shaderLocation = 1;
+        vertexAttributes[1].format = wgpu::VertexFormat::Float32x3;
+        vertexAttributes[1].offset = 2 * sizeof(float);
 
-        vertexBufferLayout.arrayStride = 2ull * sizeof(float);
+        vertexBufferLayout.attributeCount = vertexAttributes.size();
+        vertexBufferLayout.attributes = vertexAttributes.data();
+
+        vertexBufferLayout.arrayStride = 5ull * sizeof(float);
         vertexBufferLayout.stepMode = wgpu::VertexStepMode::Vertex;
         
         pipelineDesc.vertex.bufferCount = 1;
@@ -403,23 +403,21 @@ fn fs_main() -> @location(0) vec4f {
     }
 
     void Application::InitializeBuffers() {
-        // Vertex buffer data
-        // There are 2 floats per vertex, one for x and one for y.
-        // But in the end this is just a bunch of floats to the eyes of the GPU,
-        // the layout will tell how to interpret this.
         std::vector<float> vertexData = {
-            // Define a first triangle:
-            -0.5, -0.5,
-            +0.5, -0.5,
-            +0.0, +0.5,
+            // x0,  y0,  r0,  g0,  b0
+            -0.5, -0.5, 1.0, 0.0, 0.0,
 
-            // Add a second triangle:
-            -0.55f, -0.5,
-            -0.05f, +0.5,
-            -0.55f, +0.5
+            // x1,  y1,  r1,  g1,  b1
+            +0.5, -0.5, 0.0, 1.0, 0.0,
+
+            // ...
+            +0.0,   +0.5, 0.0, 0.0, 1.0,
+            -0.55f, -0.5, 1.0, 1.0, 0.0,
+            -0.05f, +0.5, 1.0, 0.0, 1.0,
+            -0.55f, +0.5, 0.0, 1.0, 1.0
         };
 
-        m_VertexCount = static_cast<uint32_t>(vertexData.size() / 2);
+        m_VertexCount = static_cast<uint32_t>(vertexData.size() / 5);
 
         // Create vertex buffer
         wgpu::BufferDescriptor vertexBufferDesc{};

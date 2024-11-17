@@ -39,8 +39,15 @@ add_cxflags("-Wno-missing-field-initializers -Werror=vla", {tools = {"clang", "g
 
 add_requires("wgpu-native", "glfw", "glfw3webgpu")
 
+rule("cp-resources")
+  after_build(function (target) 
+    os.cp("Resources", "./bin/$(plat)_$(arch)_$(mode)")
+  end)
+
 target(ProjectName)
   set_kind("binary")
+
+  add_rules("cp-resources")
   
   add_files("Source/**.cpp")
 
@@ -49,6 +56,10 @@ target(ProjectName)
   for _, ext in ipairs({".hpp", ".inl"}) do
     add_headerfiles("Include/**" .. ext)
     add_headerfiles("ThirdParty/**" .. ext)
+  end
+
+  for _, ext in ipairs({".wgsl"}) do
+    add_extrafiles("Resources/**" .. ext)
   end
   
   add_rpathdirs("$ORIGIN")
