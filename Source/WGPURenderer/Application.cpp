@@ -205,7 +205,8 @@ namespace WGPURenderer {
 
         renderPass.setPipeline(m_Pipeline);
 
-        renderPass.setVertexBuffer(0, m_VertexBuffer, 0, m_VertexBuffer.getSize());
+        renderPass.setVertexBuffer(0, m_PositionBuffer, 0, m_PositionBuffer.getSize());
+        renderPass.setVertexBuffer(1, m_ColorBuffer, 0, m_ColorBuffer.getSize());
         
         renderPass.draw(m_VertexCount, 1, 0, 0);
 
@@ -239,7 +240,8 @@ namespace WGPURenderer {
     }
 
     void Application::Terminate() {
-        m_VertexBuffer.release();
+        m_ColorBuffer.release();
+        m_PositionBuffer.release();
         m_Pipeline.release();
         m_Surface.unconfigure();
         m_Queue.release();
@@ -259,14 +261,11 @@ namespace WGPURenderer {
         // We use at most 2 vertex attribute for now
         requiredLimits.limits.maxVertexAttributes = 2;
         
-        // We should also tell that we use 1 vertex buffer
-        requiredLimits.limits.maxVertexBuffers = 1;
+        // We should also tell that we use 2 vertex buffer
+        requiredLimits.limits.maxVertexBuffers = 2;
         
-        // Maximum size of a buffer is 6 vertices of 5 float each
-        requiredLimits.limits.maxBufferSize = 6ull * 5ull * sizeof(float);
-        
-        // Maximum stride between 2 consecutive vertices in the vertex buffer
-        requiredLimits.limits.maxVertexBufferArrayStride = 5 * sizeof(float);
+        requiredLimits.limits.maxBufferSize = 6ull * 3 * sizeof(float);
+        requiredLimits.limits.maxVertexBufferArrayStride = 3 * sizeof(float);
 
         // There is a maximum of 3 float forwarded from vertex to fragment shader
         requiredLimits.limits.maxInterStageShaderComponents = 3;
@@ -308,27 +307,34 @@ namespace WGPURenderer {
 
         wgpu::RenderPipelineDescriptor pipelineDesc{};
 
-        wgpu::VertexBufferLayout vertexBufferLayout{};
+        std::array<wgpu::VertexBufferLayout, 2> vertexBufferLayouts{};
 
-        std::array<wgpu::VertexAttribute, 2> vertexAttributes{};
         // Position attribute
-        vertexAttributes[0].shaderLocation = 0;
-        vertexAttributes[0].format = wgpu::VertexFormat::Float32x2;
-        vertexAttributes[0].offset = 0;
+        wgpu::VertexAttribute positionAttrib{};
+        positionAttrib.shaderLocation = 0;
+        positionAttrib.format = wgpu::VertexFormat::Float32x2;
+        positionAttrib.offset = 0;
 
         // Color attribute
-        vertexAttributes[1].shaderLocation = 1;
-        vertexAttributes[1].format = wgpu::VertexFormat::Float32x3;
-        vertexAttributes[1].offset = 2 * sizeof(float);
+        wgpu::VertexAttribute colorAttrib{};
+        colorAttrib.shaderLocation = 1;
+        colorAttrib.format = wgpu::VertexFormat::Float32x3;
+        colorAttrib.offset = 0;
 
-        vertexBufferLayout.attributeCount = vertexAttributes.size();
-        vertexBufferLayout.attributes = vertexAttributes.data();
+        // Position vertex buffer layout
+        vertexBufferLayouts[0].attributeCount = 1;
+        vertexBufferLayouts[0].attributes = &positionAttrib;
+        vertexBufferLayouts[0].arrayStride = 2 * sizeof(float);
+        vertexBufferLayouts[0].stepMode = wgpu::VertexStepMode::Vertex;
 
-        vertexBufferLayout.arrayStride = 5ull * sizeof(float);
-        vertexBufferLayout.stepMode = wgpu::VertexStepMode::Vertex;
+        // Color vertex buffer layout
+        vertexBufferLayouts[1].attributeCount = 1;
+        vertexBufferLayouts[1].attributes = &colorAttrib;
+        vertexBufferLayouts[1].arrayStride = 3 * sizeof(float);
+        vertexBufferLayouts[1].stepMode = wgpu::VertexStepMode::Vertex;
         
-        pipelineDesc.vertex.bufferCount = 1;
-        pipelineDesc.vertex.buffers = &vertexBufferLayout;
+        pipelineDesc.vertex.bufferCount = vertexBufferLayouts.size();
+        pipelineDesc.vertex.buffers = vertexBufferLayouts.data();
 
         pipelineDesc.vertex.module = shaderModule;
         pipelineDesc.vertex.entryPoint = "vs_main";
@@ -403,31 +409,43 @@ namespace WGPURenderer {
     }
 
     void Application::InitializeBuffers() {
-        std::vector<float> vertexData = {
-            // x0,  y0,  r0,  g0,  b0
-            -0.5, -0.5, 1.0, 0.0, 0.0,
-
-            // x1,  y1,  r1,  g1,  b1
-            +0.5, -0.5, 0.0, 1.0, 0.0,
-
-            // ...
-            +0.0,   +0.5, 0.0, 0.0, 1.0,
-            -0.55f, -0.5, 1.0, 1.0, 0.0,
-            -0.05f, +0.5, 1.0, 0.0, 1.0,
-            -0.55f, +0.5, 0.0, 1.0, 1.0
+        // x0, y0, x1, y1, ...
+        const std::vector<float> positionData = {
+            -0.5, -0.5,
+            +0.5, -0.5,
+            +0.0, +0.5,
+            -0.55f, -0.5,
+            -0.05f, +0.5,
+            -0.55f, +0.5
         };
 
-        m_VertexCount = static_cast<uint32_t>(vertexData.size() / 5);
+        // r0,  g0,  b0, r1,  g1,  b1, ...
+        const std::vector<float> colorData = {
+            1.0, 0.0, 0.0,
+            0.0, 1.0, 0.0,
+            0.0, 0.0, 1.0,
+            1.0, 1.0, 0.0,
+            1.0, 0.0, 1.0,
+            0.0, 1.0, 1.0
+        };
+
+        m_VertexCount = static_cast<uint32_t>(positionData.size() / 2);
+        assert(m_VertexCount == static_cast<uint32_t>(colorData.size() / 3));
 
         // Create vertex buffer
         wgpu::BufferDescriptor vertexBufferDesc{};
-        vertexBufferDesc.size = vertexData.size() * sizeof(float);
         vertexBufferDesc.usage = wgpu::BufferUsage::CopyDst | wgpu::BufferUsage::Vertex;
         vertexBufferDesc.mappedAtCreation = false;
-        m_VertexBuffer = m_Device.createBuffer(vertexBufferDesc);
-
-        // Upload geometry data to the buffer
-        m_Queue.writeBuffer(m_VertexBuffer, 0, vertexData.data(), vertexBufferDesc.size);
+        
+        vertexBufferDesc.label = "Vertex position";
+        vertexBufferDesc.size = positionData.size() * sizeof(float);
+        m_PositionBuffer = m_Device.createBuffer(vertexBufferDesc);
+        m_Queue.writeBuffer(m_PositionBuffer, 0, positionData.data(), vertexBufferDesc.size);
+        
+        vertexBufferDesc.label = "Vertex color";
+        vertexBufferDesc.size = colorData.size() * sizeof(float);
+        m_ColorBuffer = m_Device.createBuffer(vertexBufferDesc);
+        m_Queue.writeBuffer(m_ColorBuffer, 0, colorData.data(), vertexBufferDesc.size);
     }
 
     wgpu::TextureView Application::GetNextSurfaceTextureView() {

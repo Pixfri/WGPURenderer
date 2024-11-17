@@ -32,7 +32,8 @@ namespace WGPURenderer {
         wgpu::Device m_Device = nullptr;
         wgpu::Queue m_Queue = nullptr;
         std::unique_ptr<wgpu::ErrorCallback> m_UncapturedErrorCallbackHandle = nullptr;
-        wgpu::Buffer m_VertexBuffer = nullptr;
+        wgpu::Buffer m_PositionBuffer = nullptr;
+        wgpu::Buffer m_ColorBuffer = nullptr;
         uint32_t m_VertexCount = 0;
         wgpu::RenderPipeline m_Pipeline = nullptr;
         
