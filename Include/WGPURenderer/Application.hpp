@@ -45,7 +45,7 @@ namespace WGPURenderer {
 
         bool InitializePipeline();
 
-        void InitializeBuffers();
+        bool InitializeBuffers();
 
         wgpu::TextureView GetNextSurfaceTextureView();
     };

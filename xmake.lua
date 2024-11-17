@@ -37,7 +37,7 @@ end
 
 add_cxflags("-Wno-missing-field-initializers -Werror=vla", {tools = {"clang", "gcc"}})
 
-add_requires("wgpu-native", "glfw", "glfw3webgpu")
+add_requires("wgpu-native", "glfw", "glfw3webgpu", "magic_enum")
 
 rule("cp-resources")
   after_build(function (target) 
@@ -58,12 +58,12 @@ target(ProjectName)
     add_headerfiles("ThirdParty/**" .. ext)
   end
 
-  for _, ext in ipairs({".wgsl"}) do
+  for _, ext in ipairs({".wgsl", ".txt"}) do
     add_extrafiles("Resources/**" .. ext)
   end
   
   add_rpathdirs("$ORIGIN")
 
-  add_packages("wgpu-native", "glfw", "glfw3webgpu")
+  add_packages("wgpu-native", "glfw", "glfw3webgpu", "magic_enum")
 
 includes("xmake/**.lua")

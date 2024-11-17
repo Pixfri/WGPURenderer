@@ -3,7 +3,7 @@
 // For conditions of distribution and use, see copyright notice in LICENSE.
 
 #include <WGPURenderer/Application.hpp>
-#include <WGPURenderer/ShaderLoader.hpp>
+#include <WGPURenderer/ResourceManager.hpp>
 
 #include <webgpu/webgpu.hpp>
 
@@ -13,6 +13,7 @@
 #include <iostream>
 
 namespace WGPURenderer {
+
     bool Application::Run() {
         if (!Initialize()) {
             return false;
@@ -84,7 +85,7 @@ namespace WGPURenderer {
         deviceDesc.requiredFeatureCount = 0;
         deviceDesc.requiredFeatures = nullptr;
         deviceDesc.requiredLimits = nullptr;
-        
+
         deviceDesc.defaultQueue.nextInChain = nullptr;
 
 #ifdef WR_DEBUG
@@ -149,11 +150,14 @@ namespace WGPURenderer {
         adapter.release();
 
         if (!InitializePipeline()) {
-            std::cerr << "Failed to create initialize pipeline!\n";
+            std::cerr << "Failed to initialize pipeline!\n";
             return false;
         }
 
-        InitializeBuffers();
+        if (!InitializeBuffers()) {
+            std::cerr << "Failed to initialize buffers!\n";
+            return false;
+        }
 
         return true;
     }
@@ -250,36 +254,16 @@ namespace WGPURenderer {
     }
 
     bool Application::InitializePipeline() {
-        wgpu::ShaderModuleDescriptor shaderDesc{};
-        shaderDesc.hintCount = 0;
-        shaderDesc.hints = nullptr;
-
-        wgpu::ShaderModuleWGSLDescriptor shaderCodeDesc;
-        // Set the chained struct's header
-        shaderCodeDesc.chain.sType = wgpu::SType::ShaderModuleWGSLDescriptor;
-        shaderCodeDesc.chain.next = nullptr;
-
-        // Read the shader code, the "Resources/Shaders" at the beginning of the path in inferred by the function
-        std::string shaderCode = ReadShaderFileContent("main.wgsl");
-        
-        // It is actually used, even though resharper thinks it's not, because it's not directly referenced by the
-        // wgpu::ShaderModuleDescriptor above.
-
-        // ReSharper disable once CppAssignedValueIsNeverUsed
-        shaderCodeDesc.code = shaderCode.c_str();
-
-        shaderDesc.nextInChain = &shaderCodeDesc.chain;
-
-        wgpu::ShaderModule shaderModule = m_Device.createShaderModule(shaderDesc);
+        wgpu::ShaderModule shaderModule = ResourceManager::LoadShaderModule("main.wgsl", m_Device);
 
         if (!shaderModule) {
-            std::cerr << "Failed to create shader module!\n";
+            std::cerr << "Couldn't load shader!";
             return false;
         }
 
         wgpu::RenderPipelineDescriptor pipelineDesc{};
 
-        wgpu::VertexBufferLayout vertexBufferLayout{};
+        wgpu::VertexBufferLayout vertexBufferLayout;
 
         std::array<wgpu::VertexAttribute, 2> vertexAttributes{};
         // Position attribute
@@ -297,7 +281,7 @@ namespace WGPURenderer {
 
         vertexBufferLayout.arrayStride = 5ull * sizeof(float);
         vertexBufferLayout.stepMode = wgpu::VertexStepMode::Vertex;
-        
+
         pipelineDesc.vertex.bufferCount = 1;
         pipelineDesc.vertex.buffers = &vertexBufferLayout;
 
@@ -373,29 +357,25 @@ namespace WGPURenderer {
         return true;
     }
 
-    void Application::InitializeBuffers() {
-        const std::vector<float> pointData = {
-            // x,   y,     r,   g,   b
-            -0.5, -0.5,   1.0, 0.0, 0.0,
-            +0.5, -0.5,   0.0, 1.0, 0.0,
-            +0.5, +0.5,   0.0, 0.0, 1.0,
-            -0.5, +0.5,   1.0, 1.0, 0.0
-        };
+    bool Application::InitializeBuffers() {
+        std::vector<float> pointData;
+        std::vector<uint16_t> indexData;
 
-        const std::vector<uint16_t> indexData = {
-            0, 1, 2, // Triangle #0 connects points #0, #1 and #2
-            0, 2, 3  // Triangle #1 connects points #0, #2 and #3
-        };
+        // Check for errors
+        if (!ResourceManager::LoadGeometry("webgpu.txt", pointData, indexData)) {
+            std::cerr << "Couldn't load geometry!\n";
+            return false;
+        }
 
         m_IndexCount = static_cast<uint32_t>(indexData.size());
-        
+
         // Create vertex buffer
         wgpu::BufferDescriptor bufferDesc{};
         bufferDesc.size = pointData.size() * sizeof(float);
         bufferDesc.usage = wgpu::BufferUsage::CopyDst | wgpu::BufferUsage::Vertex;
         bufferDesc.mappedAtCreation = false;
         m_PointBuffer = m_Device.createBuffer(bufferDesc);
-        
+
         m_Queue.writeBuffer(m_PointBuffer, 0, pointData.data(), bufferDesc.size);
 
         // Create index buffer
@@ -405,6 +385,8 @@ namespace WGPURenderer {
         m_IndexBuffer = m_Device.createBuffer(bufferDesc);
 
         m_Queue.writeBuffer(m_IndexBuffer, 0, indexData.data(), bufferDesc.size);
+
+        return true;
     }
 
     wgpu::TextureView Application::GetNextSurfaceTextureView() {
