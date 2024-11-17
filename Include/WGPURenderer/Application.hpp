@@ -36,6 +36,8 @@ namespace WGPURenderer {
         void MainLoop() const;
 
         void Terminate() const;
+
+        WGPUTextureView GetNextSurfaceTextureView() const;
     };
 }
 
