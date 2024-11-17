@@ -43,9 +43,12 @@ target(ProjectName)
   set_kind("binary")
   
   add_files("Source/**.cpp")
+
+  add_includedirs("ThirdParty")
   
   for _, ext in ipairs({".hpp", ".inl"}) do
     add_headerfiles("Include/**" .. ext)
+    add_headerfiles("ThirdParty/**" .. ext)
   end
   
   add_rpathdirs("$ORIGIN")

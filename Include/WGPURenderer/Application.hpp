@@ -9,7 +9,7 @@
 
 #include <GLFW/glfw3.h>
 
-#include <webgpu/webgpu.h>
+#include <webgpu/webgpu.hpp>
 
 namespace WGPURenderer {
     class Application {
@@ -27,17 +27,18 @@ namespace WGPURenderer {
     
     private:
         GLFWwindow* m_Window = nullptr;
-        WGPUSurface m_Surface = nullptr;
-        WGPUDevice m_Device = nullptr;
-        WGPUQueue m_Queue = nullptr;
-
+        wgpu::Surface m_Surface = nullptr;
+        wgpu::Device m_Device = nullptr;
+        wgpu::Queue m_Queue = nullptr;
+        std::unique_ptr<wgpu::ErrorCallback> m_UncapturedErrorCallbackHandle;
+        
         bool Initialize();
 
-        void MainLoop() const;
+        void MainLoop();
 
-        void Terminate() const;
+        void Terminate();
 
-        WGPUTextureView GetNextSurfaceTextureView() const;
+        wgpu::TextureView GetNextSurfaceTextureView();
     };
 }
 
