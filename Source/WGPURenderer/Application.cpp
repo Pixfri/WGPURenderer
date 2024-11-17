@@ -14,16 +14,8 @@ namespace WGPURenderer {
     namespace {
         auto g_ShaderCode = R"(
 @vertex
-fn vs_main(@builtin(vertex_index) in_vertex_index: u32) -> @builtin(position) vec4f {
-    var p = vec2f(0.0, 0.0);
-    if (in_vertex_index == 0u) {
-		p = vec2f(-0.5, -0.5);
-	} else if (in_vertex_index == 1u) {
-		p = vec2f(0.5, -0.5);
-	} else {
-		p = vec2f(0.0, 0.5);
-	}
-	return vec4f(p, 0.0, 1.0);
+fn vs_main(@location(0) in_vertex_position: vec2f) -> @builtin(position) vec4f {
+	return vec4f(in_vertex_position, 0.0, 1.0);
 }
 
 @fragment
@@ -103,7 +95,10 @@ fn fs_main() -> @location(0) vec4f {
 
         deviceDesc.requiredFeatureCount = 0;
         deviceDesc.requiredFeatures = nullptr;
-        deviceDesc.requiredLimits = nullptr;
+
+        const wgpu::RequiredLimits requiredLimits = GetRequiredLimits(adapter);
+        deviceDesc.requiredLimits = &requiredLimits;
+        
         deviceDesc.defaultQueue.nextInChain = nullptr;
 
 #ifdef WR_DEBUG
@@ -172,7 +167,7 @@ fn fs_main() -> @location(0) vec4f {
             return false;
         }
 
-        PlayingWithBuffers();
+        InitializeBuffers();
 
         return true;
     }
@@ -221,7 +216,10 @@ fn fs_main() -> @location(0) vec4f {
         wgpu::RenderPassEncoder renderPass = encoder.beginRenderPass(renderPassDesc);
 
         renderPass.setPipeline(m_Pipeline);
-        renderPass.draw(3, 1, 0, 0);
+
+        renderPass.setVertexBuffer(0, m_VertexBuffer, 0, m_VertexBuffer.getSize());
+        
+        renderPass.draw(m_VertexCount, 1, 0, 0);
 
         // Release the render pass encoder when we're done using it.
         renderPass.end();
@@ -253,8 +251,7 @@ fn fs_main() -> @location(0) vec4f {
     }
 
     void Application::Terminate() {
-        m_Buffer2.release();
-        m_Buffer1.release();
+        m_VertexBuffer.release();
         m_Pipeline.release();
         m_Surface.unconfigure();
         m_Queue.release();
@@ -262,6 +259,32 @@ fn fs_main() -> @location(0) vec4f {
         m_Surface.release();
         glfwDestroyWindow(m_Window);
         glfwTerminate();
+    }
+
+    wgpu::RequiredLimits Application::GetRequiredLimits(wgpu::Adapter adapter) {
+        // Get adapter supported limits, in case we need them
+        wgpu::SupportedLimits supportedLimits;
+        adapter.getLimits(&supportedLimits);
+
+        wgpu::RequiredLimits requiredLimits = wgpu::Default;
+
+        // We use at most 1 vertex attribute for now
+        requiredLimits.limits.maxVertexAttributes = 1;
+        
+        // We should also tell that we use 1 vertex buffer
+        requiredLimits.limits.maxVertexBuffers = 1;
+        
+        // Maximum size of a buffer is 6 vertices of 2 float each
+        requiredLimits.limits.maxBufferSize = 6ull * 2ull * sizeof(float);
+        
+        // Maximum stride between 2 consecutive vertices in the vertex buffer
+        requiredLimits.limits.maxVertexBufferArrayStride = 2 * sizeof(float);
+
+        // Forward the value from supported limits to avoid issues.
+        requiredLimits.limits.minUniformBufferOffsetAlignment = supportedLimits.limits.minUniformBufferOffsetAlignment;
+        requiredLimits.limits.minStorageBufferOffsetAlignment = supportedLimits.limits.minStorageBufferOffsetAlignment;
+
+        return requiredLimits;
     }
 
     bool Application::InitializePipeline() {
@@ -291,9 +314,21 @@ fn fs_main() -> @location(0) vec4f {
 
         wgpu::RenderPipelineDescriptor pipelineDesc{};
 
-        // We don't use any vertex buffer.
-        pipelineDesc.vertex.bufferCount = 0;
-        pipelineDesc.vertex.buffers = nullptr;
+        wgpu::VertexBufferLayout vertexBufferLayout{};
+
+        wgpu::VertexAttribute positionAttrib{};
+        positionAttrib.shaderLocation = 0;
+        positionAttrib.format = wgpu::VertexFormat::Float32x2;
+        positionAttrib.offset = 0;
+
+        vertexBufferLayout.attributeCount = 1;
+        vertexBufferLayout.attributes = &positionAttrib;
+
+        vertexBufferLayout.arrayStride = 2ull * sizeof(float);
+        vertexBufferLayout.stepMode = wgpu::VertexStepMode::Vertex;
+        
+        pipelineDesc.vertex.bufferCount = 1;
+        pipelineDesc.vertex.buffers = &vertexBufferLayout;
 
         pipelineDesc.vertex.module = shaderModule;
         pipelineDesc.vertex.entryPoint = "vs_main";
@@ -367,6 +402,36 @@ fn fs_main() -> @location(0) vec4f {
         return true;
     }
 
+    void Application::InitializeBuffers() {
+        // Vertex buffer data
+        // There are 2 floats per vertex, one for x and one for y.
+        // But in the end this is just a bunch of floats to the eyes of the GPU,
+        // the layout will tell how to interpret this.
+        std::vector<float> vertexData = {
+            // Define a first triangle:
+            -0.5, -0.5,
+            +0.5, -0.5,
+            +0.0, +0.5,
+
+            // Add a second triangle:
+            -0.55f, -0.5,
+            -0.05f, +0.5,
+            -0.55f, +0.5
+        };
+
+        m_VertexCount = static_cast<uint32_t>(vertexData.size() / 2);
+
+        // Create vertex buffer
+        wgpu::BufferDescriptor vertexBufferDesc{};
+        vertexBufferDesc.size = vertexData.size() * sizeof(float);
+        vertexBufferDesc.usage = wgpu::BufferUsage::CopyDst | wgpu::BufferUsage::Vertex;
+        vertexBufferDesc.mappedAtCreation = false;
+        m_VertexBuffer = m_Device.createBuffer(vertexBufferDesc);
+
+        // Upload geometry data to the buffer
+        m_Queue.writeBuffer(m_VertexBuffer, 0, vertexData.data(), vertexBufferDesc.size);
+    }
+
     wgpu::TextureView Application::GetNextSurfaceTextureView() {
         wgpu::SurfaceTexture surfaceTexture;
         m_Surface.getCurrentTexture(&surfaceTexture);
@@ -390,79 +455,8 @@ fn fs_main() -> @location(0) vec4f {
         viewDescriptor.baseArrayLayer = 0;
         viewDescriptor.arrayLayerCount = 1;
         viewDescriptor.aspect = wgpu::TextureAspect::All;
-        wgpu::TextureView targetView = texture.createView(viewDescriptor);
+        const wgpu::TextureView targetView = texture.createView(viewDescriptor);
 
         return targetView;
     }
-
-    void Application::PlayingWithBuffers() {
-        wgpu::BufferDescriptor bufferDesc{};
-        bufferDesc.label = "Some GPU-side data buffer";
-        bufferDesc.usage = wgpu::BufferUsage::CopyDst | wgpu::BufferUsage::CopySrc;
-        bufferDesc.size = 16;
-        bufferDesc.mappedAtCreation = false;
-        m_Buffer1 = m_Device.createBuffer(bufferDesc);
-
-        bufferDesc.label = "Output buffer";
-        bufferDesc.usage = wgpu::BufferUsage::CopyDst | wgpu::BufferUsage::MapRead;
-        m_Buffer2 = m_Device.createBuffer(bufferDesc);
-
-        // Create some CPU-side data buffer (of size 16 bytes)
-        std::vector<uint8_t> numbers(16);
-        for (uint8_t i = 0; i < 16; ++i) {
-            numbers[i] = i;
-        }
-        // numbers now contains [ 0, 1, 2, ... ]
-
-        // Copy this from `numbers` (RAM) to `buffer1` (VRAM)
-        m_Queue.writeBuffer(m_Buffer1, 0, numbers.data(), numbers.size());
-
-        // Create an encoder to register our commands.
-        wgpu::CommandEncoder encoder = m_Device.createCommandEncoder(wgpu::Default);
-
-        encoder.copyBufferToBuffer(m_Buffer1, 0, m_Buffer2, 0, 16);
-
-        wgpu::CommandBuffer cmdBuffer = encoder.finish(wgpu::Default);
-        encoder.release();
-        m_Queue.submit(1, &cmdBuffer);
-        cmdBuffer.release();
-
-        struct Context {
-            bool Ready;
-            wgpu::Buffer Buffer;
-        };
-
-        auto onBuffer2Mapped = [](WGPUBufferMapAsyncStatus status, void* pUserData) {
-            Context* pContext = static_cast<Context*>(pUserData);
-
-            // We set ready to true
-            pContext->Ready = true;
-
-            std::cout << "Buffer 2 mapped with status " << status << '\n';
-            if (status != wgpu::BufferMapAsyncStatus::Success) {
-                return;
-            }
-
-            // Get a pointer to wherever the driver mapped the GPU memory to the RAM
-            const auto bufferData = static_cast<const uint8_t*>(pContext->Buffer.getConstMappedRange(0, 16));
-
-            std::cout << "bufferData = [";
-            for (int i = 0; i < 16; ++i) {
-                if (i > 0) std::cout << ", ";
-                std::cout << static_cast<int>(bufferData[i]);
-            }
-            std::cout << "]\n";
-
-            pContext->Buffer.unmap();
-        };
-
-        Context context = {false, m_Buffer2};
-        
-        wgpuBufferMapAsync(m_Buffer2, wgpu::MapMode::Read, 0, 16, onBuffer2Mapped, &context);
-
-        while (!context.Ready) {
-            m_Device.poll(false);
-        }
-    }
-
 }

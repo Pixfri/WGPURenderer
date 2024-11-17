@@ -32,8 +32,8 @@ namespace WGPURenderer {
         wgpu::Device m_Device = nullptr;
         wgpu::Queue m_Queue = nullptr;
         std::unique_ptr<wgpu::ErrorCallback> m_UncapturedErrorCallbackHandle = nullptr;
-        wgpu::Buffer m_Buffer1 = nullptr;
-        wgpu::Buffer m_Buffer2 = nullptr;
+        wgpu::Buffer m_VertexBuffer = nullptr;
+        uint32_t m_VertexCount = 0;
         wgpu::RenderPipeline m_Pipeline = nullptr;
         
         bool Initialize();
@@ -42,11 +42,13 @@ namespace WGPURenderer {
 
         void Terminate();
 
+        static wgpu::RequiredLimits GetRequiredLimits(wgpu::Adapter adapter);
+        
         bool InitializePipeline();
 
-        wgpu::TextureView GetNextSurfaceTextureView();
+        void InitializeBuffers();
 
-        void PlayingWithBuffers();
+        wgpu::TextureView GetNextSurfaceTextureView();
     };
 }
 
